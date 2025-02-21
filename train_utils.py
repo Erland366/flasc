@@ -1,7 +1,31 @@
+from __future__ import annotations
+
+import os
+
 import torch
 import tensorflow as tf
 
+from typing import Union
+from loguru import logger
+
 sig = torch.nn.Sigmoid()
+
+def is_wandb_available():
+    try:
+        import wandb
+        return True
+    except ImportError:
+        return False
+def login_wandb(environ_name: str = "WANDB_API_KEY", token: str | None = None, **kwargs):
+    if not is_wandb_available():
+        raise ImportError("wandb is not available. Please install it via `pip install wandb`.")
+    import wandb
+
+    if token is None:
+        token = os.getenv(environ_name)
+        logger.debug(f"Use token from environment variable {environ_name}")
+    wandb.login(key=token, **kwargs)
+
 
 def test_batch_cls(model, x, y, multilabel=False): # classification
     outputs = model(x, labels=y)
@@ -63,11 +87,25 @@ def get_metric(stats, metric):
         elif metric == 'f1':
             return 2*stats['tp'] / (2*stats['tp'] + stats['fp'] + stats['fn'])
     
-def log_stats(writer, prefix, stats, step):
-    with writer.as_default():
-        tf.summary.scalar(f"{prefix}/accuracy", get_metric(stats, 'accu'), step=step)
-        tf.summary.scalar(f"{prefix}/recall", get_metric(stats, 'recall'), step=step)
-        tf.summary.scalar(f"{prefix}/f1", get_metric(stats, 'f1'), step=step)
-        for k,v in stats.items():
-            if k not in ['tp', 'fp', 'tn', 'fn']:
-                tf.summary.scalar(f"{prefix}/{k}", v, step=step)
+def log_stats(writer: Union[None, "SummaryWriter"], prefix, stats, step):
+
+    if writer is not None:
+        with writer.as_default():
+            tf.summary.scalar(f"{prefix}/accuracy", get_metric(stats, 'accu'), step=step)
+            tf.summary.scalar(f"{prefix}/recall", get_metric(stats, 'recall'), step=step)
+            tf.summary.scalar(f"{prefix}/f1", get_metric(stats, 'f1'), step=step)
+            for k,v in stats.items():
+                if k not in ['tp', 'fp', 'tn', 'fn']:
+                    tf.summary.scalar(f"{prefix}/{k}", v, step=step)
+
+    # Wandb logs
+    if not is_wandb_available():
+        return
+
+    import wandb
+    wandb.log({f"{prefix}/accuracy": get_metric(stats, 'accu')}, step=step)
+    wandb.log({f"{prefix}/recall": get_metric(stats, 'recall')}, step=step)
+    wandb.log({f"{prefix}/f1": get_metric(stats, 'f1')}, step=step)
+    for k,v in stats.items():
+        if k not in ['tp', 'fp', 'tn', 'fn']:
+            wandb.log({f"{prefix}/{k}" : v}, step=step)

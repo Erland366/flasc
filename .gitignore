@@ -175,3 +175,4 @@ cython_debug/
 runs/
 cifar10/
 20newsgroups/
+wandb/
