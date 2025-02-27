@@ -25,3 +25,22 @@ The code provides utilities to automatically download the CIFAR10 and 20NewsGrou
 To train a global LoRA module, run the ```train_sparse_lora_dp.py``` script.
 
 To reproduce the results on systems heterogeneity, we provide the script ```train_sparse_lora_het.py```. The script hard-codes tiers of per-round communication capability in powers of 4.
+
+# Run One Experiment
+To run one of the experiment, you can do
+```
+python train_sparse_lora_vanilla.py --config fedavg
+```
+
+Which the options are available at `configs/` folder
+
+# Run Experiment
+
+To run many experiment at the same time, you can do
+
+```
+python run_experiment.py --config-list experiments.yaml
+```
+
+Which it'll use `experiments.yaml` config that uses configs file that is available at `configs/`
+
