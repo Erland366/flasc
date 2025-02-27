@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import time
 import argparse
 from tqdm import tqdm
 from copy import deepcopy
+from typing import Union, List, Iterable, Callable, Literal
 
 from dotenv import load_dotenv
 
@@ -13,17 +16,17 @@ def str2bool(s):
 
 def parse():
     parser   = argparse.ArgumentParser()
-    parser.add_argument('--gpu',        default='0',        type=str)
-    parser.add_argument('--dir',        default='runs',     type=str)
-    parser.add_argument('--name',       default='test',     type=str)
-    parser.add_argument('--save',       default='false',     type=str)
-    parser.add_argument('--dataset',    default='cifar10',  type=str)
-    parser.add_argument('--iid-alpha',  default=0.1,  type=float)
-    parser.add_argument('--clients',    default=500,       type=int)
-    parser.add_argument('--model',      default='vit_b_16', type=str)
-    parser.add_argument('--resume',     default=0,          type=int)
-    parser.add_argument('--seed',       default=0,          type=int)
-    parser.add_argument('--eval-freq',  default=10,         type=int)
+    parser.add_argument('--gpu',            default='0',        type=str)
+    parser.add_argument('--dir',            default='runs',     type=str)
+    parser.add_argument('--name',           default='test',     type=str)
+    parser.add_argument('--save',           default='false',     type=str)
+    parser.add_argument('--dataset',        default='cifar10',  type=str)
+    parser.add_argument('--iid-alpha',      default=0.1,  type=float)
+    parser.add_argument('--clients',        default=500,       type=int)
+    parser.add_argument('--model',          default='vit_b_16', type=str)
+    parser.add_argument('--resume',         default=0,          type=int)
+    parser.add_argument('--seed',           default=0,          type=int)
+    parser.add_argument('--eval-freq',      default=10,         type=int)
     parser.add_argument('--eval-first',  default='false',      type=str)
     parser.add_argument('--eval-frac',  default=1,        type=float)
     parser.add_argument('--eval-masked',  default='true',      type=str)
@@ -46,6 +49,8 @@ def parse():
     parser.add_argument('--use_tensorboard', action="store_true", default=True)
     parser.add_argument("--project_name", default="flasc", type=str)
     parser.add_argument("--entity", default=None, type=str)
+
+    parser.add_argument("--merging_strategy", default="fedavg", type=str)
     return parser.parse_args()
 
 def main():
@@ -60,6 +65,7 @@ def main():
     import numpy as np
     import torch
     import tensorflow as tf
+    from torch import nn
     tf.config.set_visible_devices([], device_type='GPU')
     print(f"Visible GPUs: {torch.cuda.device_count()}")
 
@@ -75,12 +81,31 @@ def main():
         return mask
 
     from train_utils import log_stats, login_wandb, is_wandb_available
+    from merging import MergingFactory
 
 
-    def fl_train(save, run_dir, server_model, clients, valloader, testloader, test_batch,
-                rounds, eval_freq, eval_first, eval_masked, server_opt,
-                server_batch, server_lr, server_freeze, client_lr, client_epochs, client_freeze, 
-                l2_clip_norm=0, noise_multiplier=0):
+    def fl_train(
+        save: bool, 
+        run_dir: Union[str, os.PathLike],
+        server_model: nn.Module, 
+        clients: List[int], 
+        valloader: Iterable, 
+        testloader: Iterable, 
+        test_batch: Callable,
+        rounds: int, 
+        eval_freq: int, 
+        eval_first: bool, 
+        eval_masked: bool, 
+        server_opt: Literal["sgd", "adam"],
+        server_batch: int, 
+        server_lr: float, 
+        server_freeze: bool, 
+        client_lr: float,
+        client_epochs: int, 
+        client_freeze: bool, 
+        l2_clip_norm: float=0.0,
+        merging_strategy: str="fedavg",
+    ):
         if args.use_tensorboard:
             writer = tf.summary.create_file_writer(run_dir)
         else:
@@ -104,6 +129,11 @@ def main():
 
         server_params = {n:p for n,p in server_model.named_parameters() if p.requires_grad}
         server_mask = {n:torch.ones_like(p) for n,p in server_params.items()}
+
+        if server_freeze:
+            for p in server_params.values():
+                p.requires_grad = False
+
         if server_opt == 'sgd':
             server_opt = torch.optim.SGD(server_params.values(), lr=server_lr)
         elif server_opt == 'adam':
@@ -111,6 +141,8 @@ def main():
         else:
             raise ValueError()
         sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1, gamma=1)
+
+        merger = MergingFactory.get_merging_strategy(merging_strategy, server_model)
 
         eval_accu = 0
         def eval_loop(model, loader):        
@@ -129,9 +161,10 @@ def main():
             log_stats(writer, "eval", stats, 0)
         
         for rnd in pbar:
-            aggregate = None
+            client_deltas = []
             stats_acc = {}
             client_ids = torch.randperm(len(clients))[:server_batch]
+
             for i,client_id in enumerate(client_ids):
                 # Download Sparsity
                 client_model = deepcopy(server_model)
@@ -146,31 +179,32 @@ def main():
                         client_opt.zero_grad()
                         loss.backward()
 
+                        if l2_clip_norm > 0:
+                            torch.nn.utils.clip_grad_norm_(client_model.parameters(), l2_clip_norm)
+
                         client_opt.step()
                         for k,v in stats.items():
                             client_acc[k] = client_acc.get(k, 0) + v
                         pbar.set_description(f"eval: {eval_accu} | client {i}, epoch {epoch} | loss {loss:.4f}")
 
-                neg_client_delta = {n: server_params[n].data - cp.data for n,cp 
-                                    in client_model.named_parameters() if cp.requires_grad}
+                # This is our delta parameter
+                neg_client_delta = {
+                    n: server_params[n].data - cp.data for n,cp 
+                                    in client_model.named_parameters() if cp.requires_grad
+                }
 
-                # Aggregation
-                if aggregate is None:
-                    aggregate = neg_client_delta
-                else:
-                    for n, delta in neg_client_delta.items():
-                        aggregate[n] += delta
+                client_deltas.append(neg_client_delta)
+
                 # Log last iteration
                 client_acc['norm'] = 0
                 for k,v in client_acc.items():
                     stats_acc[k] = stats_acc.get(k, 0) + v
 
-            # Server model update
-            server_opt.zero_grad()
-            for n, sp in server_params.items():
-                sp.grad = aggregate[n] / server_batch
-            server_opt.step()
+            # Optimizer step
+            aggregated_update = merger.aggregate_updates(client_deltas)
+            merger.update_server_model(aggregated_update, server_opt)
             sched.step()
+
             # Eval and Logging
             if (rnd+1) % eval_freq == 0:
                 eval_model = deepcopy(server_model)
@@ -203,7 +237,7 @@ def main():
     model = model.cuda()
 
     # Add hash4 at the end?
-    args.name += f"_{args.model}_c{args.clients}_b{args.client_batch}_lr{args.client_lr}_e{args.client_epochs}"
+    args.name += f"_{args.model}_c{args.clients}_b{args.client_batch}_lr{args.client_lr}_e{args.client_epochs}_{args.merging_strategy}"
     args.wandb_name = f"{args.name}"
     # add name with date
     args.run_dir_name = f"{args.dir}/{args.name}_{time.strftime('%Y%m%d-%H%M%S')}"
@@ -211,8 +245,9 @@ def main():
     run_dir = args.run_dir_name
     os.makedirs(run_dir)
     import json
+
     with open(f"{run_dir}/args.json", 'w') as f:
-    json.dump(vars(args), f, indent=4)
+        json.dump(vars(args), f, indent=4)
     print(f"Saved args to {run_dir}")
 
     fl_train(str2bool(args.save),
@@ -229,7 +264,8 @@ def main():
         client_epochs=args.client_epochs,
         client_freeze=str2bool(args.client_freeze),
         l2_clip_norm=args.l2_clip_norm,
-        noise_multiplier=args.noise_multiplier)
+        merging_strategy=args.merging_strategy
+    )
 
     if is_wandb_available():
         import wandb
