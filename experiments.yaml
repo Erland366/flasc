@@ -1,0 +1,11 @@
+- config: fedavg
+  name: comparison_cifar10_fedavg
+  dataset: cifar10
+  clients: 100
+  server-rounds: 100
+
+- config: fedprox
+  name: comparison_cifar10_fedprox
+  dataset: cifar10
+  clients: 100
+  server-rounds: 100

@@ -8,53 +8,16 @@ from copy import deepcopy
 from typing import Union, List, Iterable, Callable, Literal
 
 from dotenv import load_dotenv
+from config import ConfigManager
 
 load_dotenv()
 
 def str2bool(s):
     return s.lower() == 'true'
 
-def parse():
-    parser   = argparse.ArgumentParser()
-    parser.add_argument('--gpu',            default='0',        type=str)
-    parser.add_argument('--dir',            default='runs',     type=str)
-    parser.add_argument('--name',           default='test',     type=str)
-    parser.add_argument('--save',           default='false',     type=str)
-    parser.add_argument('--dataset',        default='cifar10',  type=str)
-    parser.add_argument('--iid-alpha',      default=0.1,  type=float)
-    parser.add_argument('--clients',        default=500,       type=int)
-    parser.add_argument('--model',          default='vit_b_16', type=str)
-    parser.add_argument('--resume',         default=0,          type=int)
-    parser.add_argument('--seed',           default=0,          type=int)
-    parser.add_argument('--eval-freq',      default=10,         type=int)
-    parser.add_argument('--eval-first',  default='false',      type=str)
-    parser.add_argument('--eval-frac',  default=1,        type=float)
-    parser.add_argument('--eval-masked',  default='true',      type=str)
-    #
-    parser.add_argument('--server-opt',       default='adam',  type=str)
-    parser.add_argument('--server-lr',        default=1e-3,    type=float)
-    parser.add_argument('--server-batch',     default=10,       type=int)
-    parser.add_argument('--server-rounds',    default=200,      type=int)
-    parser.add_argument('--client-lr',        default=1e-3,    type=float)
-    parser.add_argument('--client-batch',     default=16,      type=int)
-    parser.add_argument('--client-epochs',    default=1,       type=int)
-    parser.add_argument('--client-freeze',    default='false',     type=str)
-    parser.add_argument('--server-freeze',    default='false',     type=str)
-    parser.add_argument('--freeze-a',         default='false',     type=str)
-    parser.add_argument('--lora-rank',  default=16, type=int)
-    parser.add_argument('--lora-alpha', default=16, type=int)
-    parser.add_argument('--l2-clip-norm', default=0, type=float)
-    parser.add_argument('--noise-multiplier', default=0, type=float)
-    parser.add_argument('--use_wandb', action="store_true", default=True)
-    parser.add_argument('--use_tensorboard', action="store_true", default=True)
-    parser.add_argument("--project_name", default="flasc", type=str)
-    parser.add_argument("--entity", default=None, type=str)
-
-    parser.add_argument("--merging_strategy", default="fedavg", type=str)
-    return parser.parse_args()
-
 def main():
-    args = parse()
+    config_manager = ConfigManager()
+    args = argparse.Namespace(**config_manager.process_cli_args())
     # os.environ['OMP_NUM_THREADS'] = '1'
     # os.environ['ROCR_VISIBLE_DEVICES'] = args.gpu
     # os.environ['HIP_VISIBLE_DEVICES'] = args.gpu
@@ -105,6 +68,7 @@ def main():
         client_freeze: bool, 
         l2_clip_norm: float=0.0,
         merging_strategy: str="fedavg",
+        merging_kwargs: dict=None
     ):
         if args.use_tensorboard:
             writer = tf.summary.create_file_writer(run_dir)
@@ -142,7 +106,8 @@ def main():
             raise ValueError()
         sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1, gamma=1)
 
-        merger = MergingFactory.get_merging_strategy(merging_strategy, server_model)
+        merging_kwargs = merging_kwargs or {}
+        merger = MergingFactory.get_merging_strategy(merging_strategy, server_model, args=args, **merging_kwargs)
 
         eval_accu = 0
         def eval_loop(model, loader):        
@@ -158,7 +123,8 @@ def main():
         
         if eval_first:
             # I think this is still error?
-            log_stats(writer, "eval", stats, 0)
+            # log_stats(writer, "eval", stats, 0)
+            pass
         
         for rnd in pbar:
             client_deltas = []
@@ -264,7 +230,8 @@ def main():
         client_epochs=args.client_epochs,
         client_freeze=str2bool(args.client_freeze),
         l2_clip_norm=args.l2_clip_norm,
-        merging_strategy=args.merging_strategy
+        merging_strategy=args.merging_strategy,
+        merging_kwargs=args.merging_kwargs
     )
 
     if is_wandb_available():
