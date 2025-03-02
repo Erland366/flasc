@@ -5,7 +5,7 @@ import time
 import argparse
 from tqdm import tqdm
 from copy import deepcopy
-from typing import Union, List, Iterable, Callable, Literal
+from typing import Iterable, Callable, Literal
 
 from dotenv import load_dotenv
 from config import ConfigManager
@@ -45,13 +45,14 @@ def main():
 
     from train_utils import log_stats, login_wandb, is_wandb_available, difference_models_norm_2, get_proxy_dict, get_auxiliary_dict
     from merging import MergingFactory, global_aggregate
+    from federated import FederatedFactory
     import torch_optimizer
 
     def fl_train(
         save: bool, 
-        run_dir: Union[str, os.PathLike],
+        run_dir: str | os.PathLike,
         server_model: nn.Module, 
-        clients: List[int], 
+        clients: list[int], 
         valloader: Iterable, 
         testloader: Iterable, 
         test_batch: Callable,
@@ -68,7 +69,9 @@ def main():
         client_freeze: bool, 
         l2_clip_norm: float=0.0,
         merging_strategy: str="fedavg",
-        merging_kwargs: dict=None
+        fed_optimizer: str="fedsvg",
+        merging_kwargs: dict | None = None,
+        fed_optimizer_kwargs: dict | None = None
     ):
         if args.use_tensorboard:
             writer = tf.summary.create_file_writer(run_dir)
@@ -96,6 +99,7 @@ def main():
         # get the proxy dict for the server
         proxy_dict, opt_proxy_dict = get_proxy_dict(args, server_params)
         global_auxiliary, auxiliary_model_list, auxiliary_deltas = get_auxiliary_dict(args, server_params)
+
         if server_freeze:
             for p in server_params.values():
                 p.requires_grad = False
@@ -131,7 +135,23 @@ def main():
         sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1, gamma=1)
 
         merging_kwargs = merging_kwargs or {}
-        merger = MergingFactory.get_merging_strategy(merging_strategy, server_model, args=args, **merging_kwargs)
+        merger = MergingFactory.get_merging_strategy(
+            merging_strategy, 
+            server_model, 
+            args=args, 
+            **merging_kwargs
+        )
+
+        fed_optimizer_kwargs = fed_optimizer_kwargs or {}
+        fed_optimizer_kwargs["lr"] = server_lr
+        fed_optimizer_kwargs["num_clients"] = len(clients)
+
+        fed_opt = FederatedFactory.get_federated_optimizer(
+            fed_optimizer, 
+            server_model, 
+            args=args, 
+            **fed_optimizer_kwargs
+        )
 
         eval_accu = 0
         def eval_loop(model, loader):        
@@ -152,13 +172,14 @@ def main():
         
         for round_idx, rnd in enumerate(pbar):
             client_deltas = []
+            auxiliary_deltas = []
             stats_acc = {}
-            client_ids = torch.randperm(len(clients))[:server_batch]
+            client_ids = torch.randperm(len(clients))[:server_batch].tolist()
             sample_num_list = [len(clients[client_id]) for client_id in client_ids]  # record the number of batches for each client
             clients_this_round = server_batch  # record the number of clients for this round
-            # scaffold delta
-            if merging_strategy == "scaffold":
-                auxiliary_deltas = []
+
+            if fed_optimizer == "scaffold" and fed_opt.auxiliary_model_list is None:
+                fed_opt.init_state(client_ids)
 
             for i,client_id in enumerate(client_ids):
                 # Download Model
@@ -170,18 +191,16 @@ def main():
                 client_acc = {}
                 
                 # scaffold correction
-                if merging_strategy == 'scaffold':
-                    local_auxiliary = auxiliary_model_list[client_id]
-                    correction = {key: global_auxiliary[key] - local_auxiliary[key] for key in global_auxiliary.keys()}
+                if fed_optimizer == 'scaffold':
+                    local_auxiliary = fed_opt.auxiliary_model_list[client_id]
+                    correction = {key: fed_opt.global_auxiliary[key] - local_auxiliary[key] for key in fed_opt.global_auxiliary.keys()}
                 
                 for epoch in range(client_epochs):
                     for x,y in client_loader:
                         loss, stats = test_batch(client_model, x, y)
-                        # fedprox
-                        if merging_strategy == "fedprox":
-                            mu = args.merging_kwargs['mu']  # TODO: do not use global variable "args"
-                            loss += mu/2*difference_models_norm_2(client_model, server_model)
-                        
+
+                        fed_opt.loss_hook(loss, client_model.parameters(), server_model.parameters())
+                    
                         client_opt.zero_grad()
                         loss.backward()
 
@@ -189,11 +208,8 @@ def main():
                             torch.nn.utils.clip_grad_norm_(client_model.parameters(), l2_clip_norm)
 
                         client_opt.step()
-                        # scaffold correction
-                        if merging_strategy == 'scaffold':
-                            for k, v in client_model.named_parameters():
-                                if k in correction:
-                                    v.data -= client_lr * correction[k]
+
+                        fed_opt.post_step_hook(client_model, client_lr, correction)
 
                         for k,v in stats.items():
                             client_acc[k] = client_acc.get(k, 0) + v
@@ -202,22 +218,23 @@ def main():
                 # This is our delta parameter
                 neg_client_delta = {
                     n: server_params[n].data - cp.data for n,cp 
-                                    in client_model.named_parameters() if cp.requires_grad
+                    in client_model.named_parameters() if cp.requires_grad
                 }
                 client_deltas.append(neg_client_delta)
+
                 # update auxiliary model
-                if merging_strategy == 'scaffold':
+                if fed_optimizer == 'scaffold':
                     with torch.no_grad():
                         new_local_auxiliary = deepcopy(local_auxiliary)
                         update_steps = client_epochs * len(client_loader)
                         for k, v in client_model.named_parameters():
-                            if v.requires_grad is False:
-                                continue
-                            else:
+                            if v.requires_grad:
                                 new_local_auxiliary[k] = (server_params[k] - v) / (update_steps * client_lr) - correction[k]
+
                         # get the auxiliary delta
                         auxiliary_delta = {key: new_local_auxiliary[key] - local_auxiliary[key] for key in local_auxiliary.keys()}
                         auxiliary_deltas.append(auxiliary_delta)
+
                         # update the auxiliary model
                         auxiliary_model_list[client_id] = new_local_auxiliary
 
@@ -227,14 +244,24 @@ def main():
                     stats_acc[k] = stats_acc.get(k, 0) + v
 
             # Optimizer step
-            # aggregated_update = merger.aggregate_updates(client_deltas)
-            # merger.update_server_model(aggregated_update, server_opt)
-            # sched.step()
-            server_params, global_auxiliary = global_aggregate(args, server_params, client_deltas, sample_num_list,
-                                                               clients_this_round, round_idx, proxy_dict=proxy_dict,
-                                                               opt_proxy_dict=opt_proxy_dict,
-                                                               auxiliary_info=(global_auxiliary, auxiliary_deltas),
-                                                               lr=server_lr)
+            aggregated_update = merger.aggregate_updates(client_deltas)
+
+            # TODO: merger is before or after the opt step?
+            merger.update_server_model(aggregated_update, server_opt)
+            sched.step() #TODO why is this commented before?
+
+            if fed_optimizer == "scaffold":
+                fed_opt.step(aggregated_update, auxiliary_deltas, client_ids, sample_num_list)
+            else:
+                fed_opt.step(aggregated_update, sample_num_list)
+
+            fed_opt.increment_round()
+            
+            # server_params, global_auxiliary = global_aggregate(args, server_params, client_deltas, sample_num_list,
+            #                                                    clients_this_round, round_idx, proxy_dict=proxy_dict,
+            #                                                    opt_proxy_dict=opt_proxy_dict,
+            #                                                    auxiliary_info=(global_auxiliary, auxiliary_deltas),
+            #                                                    lr=server_lr)
             
 
             # Eval and Logging
@@ -249,8 +276,14 @@ def main():
             log_stats(writer, "train", stats_acc, rnd+1)
 
             pbar.set_description(f"eval: {eval_accu}")
-        # if save:
-        #     torch.save({'delta': server_params, 'mask': server_mask}, f"{run_dir}/save.pt")
+
+        if save:
+            save_path = f"{run_dir}/final_model.pt"
+            torch.save({
+                'model_state_dict': server_model.state_dict(),
+                'args': vars(args)
+            }, save_path)
+            print(f"Saved final model to {save_path}")
 
     import data_utils
     clients, valloader, testloader, test_batch = data_utils.build_dataset(
@@ -260,10 +293,12 @@ def main():
     model = models.build_model(args.dataset)
     total = sum(p.numel() for p in model.parameters() if p.requires_grad)
     models.add_adapters_dataset(args.dataset, model, args.lora_rank, args.lora_alpha)
+
     if str2bool(args.freeze_a):
         for n,p in model.named_parameters():
             if "lora_A" in n:
                 p.requires_grad = False
+
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Training {trainable} parameters ({100*trainable/total:.2f}% of original {total})")
     model = model.cuda()
@@ -297,6 +332,7 @@ def main():
         client_freeze=str2bool(args.client_freeze),
         l2_clip_norm=args.l2_clip_norm,
         merging_strategy=args.merging_strategy,
+        fed_optimizer=getattr(args, "fed_optimizer", "fedsgd"),
         merging_kwargs=args.merging_kwargs
     )
 

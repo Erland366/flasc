@@ -96,10 +96,19 @@ class ConfigManager:
                             help="Merging strategy")
         
         parser.add_argument("--mu", type=float, help="Proximal term weight for FedProx")
-        parser.add_argument("--trim-ratio", type=float, 
-                            help="Trim ratio for TrimmedMean")
-        parser.add_argument("--personalized-layers", type=str, nargs="+", 
-                            help="Layer names to be treated as personalized in FedPer")
+        parser.add_argument("--merging_kwargs", default={}, type=dict, 
+                        help="Additional parameters for merging strategy")
+        parser.add_argument("--fed_optimizer", default="fedsgd", type=str,
+                        choices=["fedsgd", "fedavgm", "fedadagrad", "fedadam", "fedyogi", "scaffold"],
+                        help="Federated optimization strategy")
+        parser.add_argument("--server_hparams", default={}, type=dict,
+                        help="Hyperparameters for server optimization")
+        parser.add_argument("--beta1", default=0.9, type=float,
+                        help="Beta1 parameter for momentum-based optimizers")
+        parser.add_argument("--beta2", default=0.999, type=float,
+                        help="Beta2 parameter for adaptive optimizers")
+        parser.add_argument("--tau", default=1e-8, type=float,
+                        help="Small constant for numerical stability in adaptive optimizers")
         
         return parser
     

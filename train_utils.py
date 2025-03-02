@@ -111,17 +111,6 @@ def log_stats(writer: Union[None, "SummaryWriter"], prefix, stats, step):
         if k not in ['tp', 'fp', 'tn', 'fn']:
             wandb.log({f"{prefix}/{k}" : v}, step=step)
 
-def difference_models_norm_2(model_1, model_2):
-    """Return the norm 2 difference between the two model parameters
-    """
-    tensor_1=list(model_1.parameters())
-    tensor_2=list(model_2.parameters())
-    
-    norm=sum([torch.sum((tensor_1[i]-tensor_2[i])**2) 
-        for i in range(len(tensor_1))])
-    
-    return norm
-
 # from: https://github.com/rui-ye/FedLLM-Bench/blob/main/federated_learning/fed_utils.py
 def get_proxy_dict(fed_args, global_dict):
     opt_proxy_dict = None
