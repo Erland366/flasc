@@ -39,7 +39,7 @@ Which the options are available at `configs/` folder
 To run many experiment at the same time, you can do
 
 ```
-python run_experiment.py --config-list experiments.yaml
+python run_experiments.py --config-list experiments.yaml
 ```
 
 Which it'll use `experiments.yaml` config that uses configs file that is available at `configs/`

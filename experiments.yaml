@@ -1,14 +1,8 @@
-# - config: fedavg
-#   name: comparison_20newsgroups_fedavg
-#   dataset: 20newsgroups
-#   clients: 100
-#   server-rounds: 100
-
-# - config: fedprox
-#   name: comparison_20newsgroups_fedprox
-#   dataset: 20newsgroups
-#   clients: 100
-#   server-rounds: 100
+- config: fedavg
+  name: comparison_20newsgroups_fedavg
+  dataset: 20newsgroups
+  clients: 100
+  server-rounds: 100
 
 - config: fedavgm
   name: comparison_20newsgroups_fedavgm
@@ -30,6 +24,18 @@
 
 - config: fedyogi
   name: comparison_20newsgroups_fedyogi
+  dataset: 20newsgroups
+  clients: 100
+  server-rounds: 100
+
+- config: fedprox
+  name: comparison_20newsgroups_fedprox
+  dataset: 20newsgroups
+  clients: 100
+  server-rounds: 100
+
+- config: scaffold
+  name: comparison_20newsgroups_fedprox
   dataset: 20newsgroups
   clients: 100
   server-rounds: 100
