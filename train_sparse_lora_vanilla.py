@@ -199,15 +199,8 @@ def main():
                     for x,y in client_loader:
                         loss, stats = test_batch(client_model, x, y)
 
-                        # fedprox
-                        if merging_strategy == "fedprox":
-                            mu = args.merging_kwargs.get('mu', 0.01)
-                            proximal_term = 0.0
-                            for w, w_t in zip(client_model.parameters(), server_model.parameters()):
-                                proximal_term += (w - w_t).norm(2)**2
-                            loss += mu/2 * proximal_term
+                        fed_opt.loss_hook(loss, client_model.parameters(), server_model.parameters())
                     
-                        
                         client_opt.zero_grad()
                         loss.backward()
 
@@ -216,11 +209,7 @@ def main():
 
                         client_opt.step()
 
-                        # scaffold correction
-                        if fed_optimizer == 'scaffold':
-                            for k, v in client_model.named_parameters():
-                                if k in correction:
-                                    v.data -= client_lr * correction[k]
+                        fed_opt.post_step_hook(client_model, client_lr, correction)
 
                         for k,v in stats.items():
                             client_acc[k] = client_acc.get(k, 0) + v
@@ -256,8 +245,11 @@ def main():
 
             # Optimizer step
             aggregated_update = merger.aggregate_updates(client_deltas)
-            # merger.update_server_model(aggregated_update, server_opt)
-            # sched.step()
+
+            # TODO: merger is before or after the opt step?
+            merger.update_server_model(aggregated_update, server_opt)
+            sched.step() #TODO why is this commented before?
+
             if fed_optimizer == "scaffold":
                 fed_opt.step(aggregated_update, auxiliary_deltas, client_ids, sample_num_list)
             else:

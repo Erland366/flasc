@@ -18,6 +18,14 @@ class BaseFederated:
     def increment_round(self):
         self.round_idx += 1
 
+    def post_step_hook(self, *args, **kwargs):
+        """Hook for training such as scaffold"""
+        pass
+
+    def post_epoch_hook(self, *args, **kwargs):
+        """Hook for training such as scaffold"""
+        pass
+
 class FedSGD(BaseFederated):
     def step(self, merged_update: dict[str, torch.Tensor], sample_num_list: list[int] | None = None):
         for key in self.server_params.keys():
@@ -170,6 +178,14 @@ class SCAFFOLD(BaseFederated):
             for key in self.global_auxiliary.keys():
                 delta_auxiliary = sum([auxiliary_deltas[i][key] for i in range(len(auxiliary_deltas))])
                 self.global_auxiliary[key] += delta_auxiliary / len(auxiliary_deltas)
+                    
+    def post_step_hook(self, client_model: nn.Module, client_lr: float, correction: dict[str, torch.Tensor]):
+        for k, v in client_model.named_parameters():
+            if k in correction:
+                v.data += correction[k] * client_lr
+
+    def post_epoch_hook(self, *args, **kwargs):
+        pass
 
 
 class FederatedFactory:

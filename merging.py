@@ -17,6 +17,10 @@ class BaseMerging:
                 p.grad = aggregated_update[n]
         server_opt.step()
 
+    def loss_hook(self, loss: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        # TODO: Add loss_hook for algorithm that modifies the loss function such as FedProx
+        return loss
+
 class FedAvg(BaseMerging):
     def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         batch_size = len(client_deltas)
@@ -40,14 +44,17 @@ class FedProx(BaseMerging):
         self.mu = mu
         
     def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]], **kwargs) -> dict[str, torch.Tensor]:
+        """Fedprox was applied to the loss function, hence in this part is just a regular FedAvg"""
         fed_avg = FedAvg(self.server_model)
         aggregate = fed_avg.aggregate_updates(client_deltas)
-        
-        # fedprox was applied to the loss function, removed from here
-        # for n, agg_delta in aggregate.items():
-        #     agg_delta.mul_(1.0 / (1.0 + self.mu))
-            
         return aggregate
+
+    def loss_hook(self, loss: torch.Tensor, client_parameters: nn.Module, server_parameters: nn.Module) -> torch.Tensor:
+        proximal_term = 0.0
+        for w, w_t in zip(client_parameters, server_parameters):
+            proximal_term += (w - w_t).norm(2)**2
+        loss += self.mu/2 * proximal_term
+        return loss
 
 class FedDare(BaseMerging):
     def __init__(self, server_model: nn.Module, p_drop: float = 0.5):
@@ -115,12 +122,8 @@ class MergingFactory:
         
         merging_kwargs.update(kwargs)
         
-        if strategy in ["fedavg", "fedprox", "fedavgm", "fedadam", "fedadagrad", "fedyogi", "scaffold"]:
+        if strategy in ["fedavg", "fedprox"]:
             return FedAvg(server_model)
-        # elif strategy == "fedprox":
-        #     # TODO: Double check when we have the args + kwargs (pass the params through argparse)
-        #     mu = merging_kwargs.get("mu", 0.01)
-        #     return FedProx(server_model, mu=mu)
         elif strategy == "feddare":
             p_drop = merging_kwargs.get("p_drop", 0.5)
             return FedDare(server_model, p_drop=p_drop)
