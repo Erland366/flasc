@@ -198,10 +198,15 @@ def main():
                 for epoch in range(client_epochs):
                     for x,y in client_loader:
                         loss, stats = test_batch(client_model, x, y)
+
                         # fedprox
                         if merging_strategy == "fedprox":
-                            mu = args.merging_kwargs.get('mu', 0.01)  # TODO: do not use global variable "args"
-                            loss += mu/2*difference_models_norm_2(client_model, server_model)
+                            mu = args.merging_kwargs.get('mu', 0.01)
+                            proximal_term = 0.0
+                            for w, w_t in zip(client_model.parameters(), server_model.parameters()):
+                                proximal_term += (w - w_t).norm(2)**2
+                            loss += mu/2 * proximal_term
+                    
                         
                         client_opt.zero_grad()
                         loss.backward()
