@@ -1,5 +1,3 @@
-from typing import List, Dict
-
 import torch
 
 from torch import nn
@@ -9,10 +7,10 @@ class BaseMerging:
         self.server_model = server_model
         self.server_params = {n: p for n, p in server_model.named_parameters() if p.requires_grad}
 
-    def aggregate_updates(self, client_deltas: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         raise NotImplementedError()
 
-    def update_server_model(self, aggregated_update: Dict[str, torch.Tensor], server_opt: torch.optim.Optimizer) -> None:
+    def update_server_model(self, aggregated_update: dict[str, torch.Tensor], server_opt: torch.optim.Optimizer) -> None:
         server_opt.zero_grad()
         for n, p in self.server_params.items():
             if n in aggregated_update:
@@ -20,7 +18,7 @@ class BaseMerging:
         server_opt.step()
 
 class FedAvg(BaseMerging):
-    def aggregate_updates(self, client_deltas: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         batch_size = len(client_deltas)
 
         aggregate = {}
@@ -41,7 +39,7 @@ class FedProx(BaseMerging):
         super().__init__(server_model)
         self.mu = mu
         
-    def aggregate_updates(self, client_deltas: List[Dict[str, torch.Tensor]], **kwargs) -> Dict[str, torch.Tensor]:
+    def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]], **kwargs) -> dict[str, torch.Tensor]:
         fed_avg = FedAvg(self.server_model)
         aggregate = fed_avg.aggregate_updates(client_deltas)
         
@@ -56,7 +54,7 @@ class FedDare(BaseMerging):
         super().__init__(server_model)
         self.p_drop = p_drop
 
-    def aggregate_updates(self, client_deltas: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def aggregate_updates(self, client_deltas: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         # We dropped several params and rescale the rest just like in Dropout
         batch_size = len(client_deltas)
 
