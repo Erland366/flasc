@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from typing import Union
 from loguru import logger
+from copy import deepcopy
 
 sig = torch.nn.Sigmoid()
 
@@ -16,6 +17,7 @@ def is_wandb_available():
         return True
     except ImportError:
         return False
+
 def login_wandb(environ_name: str = "WANDB_API_KEY", token: str | None = None, **kwargs):
     if not is_wandb_available():
         raise ImportError("wandb is not available. Please install it via `pip install wandb`.")
@@ -25,7 +27,6 @@ def login_wandb(environ_name: str = "WANDB_API_KEY", token: str | None = None, *
         token = os.getenv(environ_name)
         logger.debug(f"Use token from environment variable {environ_name}")
     wandb.login(key=token, **kwargs)
-
 
 def test_batch_cls(model, x, y, multilabel=False): # classification
     outputs = model(x, labels=y)
@@ -86,7 +87,7 @@ def get_metric(stats, metric):
             return stats['tp'] / (stats['tp'] + stats['fn'])
         elif metric == 'f1':
             return 2*stats['tp'] / (2*stats['tp'] + stats['fp'] + stats['fn'])
-    
+
 def log_stats(writer: Union[None, "SummaryWriter"], prefix, stats, step):
 
     if writer is not None:
@@ -109,3 +110,45 @@ def log_stats(writer: Union[None, "SummaryWriter"], prefix, stats, step):
     for k,v in stats.items():
         if k not in ['tp', 'fp', 'tn', 'fn']:
             wandb.log({f"{prefix}/{k}" : v}, step=step)
+
+def difference_models_norm_2(model_1, model_2):
+    """Return the norm 2 difference between the two model parameters
+    """
+    tensor_1=list(model_1.parameters())
+    tensor_2=list(model_2.parameters())
+    
+    norm=sum([torch.sum((tensor_1[i]-tensor_2[i])**2) 
+        for i in range(len(tensor_1))])
+    
+    return norm
+
+# from: https://github.com/rui-ye/FedLLM-Bench/blob/main/federated_learning/fed_utils.py
+def get_proxy_dict(fed_args, global_dict):
+    opt_proxy_dict = None
+    proxy_dict = None
+    if fed_args.merging_strategy in ['fedadagrad', 'fedyogi', 'fedadam']:
+        proxy_dict, opt_proxy_dict = {}, {}
+        for key in global_dict.keys():
+            proxy_dict[key] = torch.zeros_like(global_dict[key])
+            opt_proxy_dict[key] = torch.zeros_like(global_dict[key])  * fed_args.server_hparams["tau"]**2
+    elif fed_args.merging_strategy == 'fedavgm':
+        proxy_dict = {}
+        for key in global_dict.keys():
+            proxy_dict[key] = torch.zeros_like(global_dict[key])
+    return proxy_dict, opt_proxy_dict
+
+def get_auxiliary_dict(fed_args, global_dict):
+
+    if fed_args.merging_strategy in ['scaffold']:
+        global_auxiliary = {}               # c in SCAFFOLD
+        for key in global_dict.keys():
+            global_auxiliary[key] = torch.zeros_like(global_dict[key])
+        auxiliary_model_list = [deepcopy(global_auxiliary) for _ in range(fed_args.clients)]    # c_i in SCAFFOLD
+        auxiliary_deltas = []    # delta c_i in SCAFFOLD
+
+    else:
+        global_auxiliary = None
+        auxiliary_model_list = [None]*fed_args.clients
+        auxiliary_deltas = []
+
+    return global_auxiliary, auxiliary_model_list, auxiliary_deltas

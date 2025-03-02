@@ -21,7 +21,7 @@ server-batch: 10  # numbers of sampled clients per round
 server-rounds: 100
 server-freeze: "false"
 server-hparams:
-  
+  beta1: 0.5
 
 # Client settings
 client-lr: 1.0e-3
@@ -45,6 +45,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedavg"
+merging_strategy: "fedavgm"
 merging_kwargs:
   

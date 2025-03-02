@@ -15,13 +15,13 @@ eval-frac: 1.0
 eval-masked: "true"
 
 # Server settings
-server-opt: "sgd"
-server-lr: 1
+server-opt: "adagrad"
+server-lr: 1.0e-3
 server-batch: 10  # numbers of sampled clients per round
 server-rounds: 100
 server-freeze: "false"
 server-hparams:
-  
+  tau: 1.0e-10
 
 # Client settings
 client-lr: 1.0e-3
@@ -45,6 +45,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedavg"
+merging_strategy: "fedadagrad"
 merging_kwargs:
   

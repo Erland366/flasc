@@ -20,6 +20,9 @@ server-lr: 1.0e-3
 server-batch: 10
 server-rounds: 100
 server-freeze: "false"
+server-hparams:
+  beta1: 0.9
+  beta2: 0.999
 
 # Client settings
 client-lr: 1.0e-3

@@ -43,9 +43,9 @@ def main():
         mask[keep_idx] = 1
         return mask
 
-    from train_utils import log_stats, login_wandb, is_wandb_available
-    from merging import MergingFactory
-
+    from train_utils import log_stats, login_wandb, is_wandb_available, difference_models_norm_2, get_proxy_dict, get_auxiliary_dict
+    from merging import MergingFactory, global_aggregate
+    import torch_optimizer
 
     def fl_train(
         save: bool, 
@@ -93,15 +93,39 @@ def main():
 
         server_params = {n:p for n,p in server_model.named_parameters() if p.requires_grad}
         server_mask = {n:torch.ones_like(p) for n,p in server_params.items()}
-
+        # get the proxy dict for the server
+        proxy_dict, opt_proxy_dict = get_proxy_dict(args, server_params)
+        global_auxiliary, auxiliary_model_list, auxiliary_deltas = get_auxiliary_dict(args, server_params)
         if server_freeze:
             for p in server_params.values():
                 p.requires_grad = False
 
         if server_opt == 'sgd':
-            server_opt = torch.optim.SGD(server_params.values(), lr=server_lr)
+            if merging_strategy == 'fedavgm':
+                momemtum = args.server_hparams['beta1']
+                server_opt = torch.optim.SGD(server_params.values(), lr=server_lr, momentum=momemtum)
+            else:
+                server_opt = torch.optim.SGD(server_params.values(), lr=server_lr)
         elif server_opt == 'adam':
-            server_opt = torch.optim.AdamW(server_params.values(), lr=server_lr)
+            if merging_strategy == 'fedadam':
+                beta1 = args.server_hparams['beta1']
+                beta2 = args.server_hparams['beta2']
+                server_opt = torch.optim.Adam(server_params.values(), lr=server_lr, betas=(beta1, beta2))
+            # else:
+            #     raise ValueError("Only set server optimizer as adam when using FedAdam")
+        elif server_opt == 'adagrad':
+            if merging_strategy == 'fedadagrad':
+                lr_decay = 0
+                server_opt = torch.optim.Adagrad(server_params.values(), lr=server_lr, lr_decay=lr_decay)
+            # else:
+            #     raise ValueError("Only set server optimizer as adagrad when using FedAdagrad")
+        elif server_opt == "yogi":
+            if merging_strategy == 'fedyogi':
+                beta1 = args.server_hparams['beta1']
+                beta2 = args.server_hparams['beta2']
+                server_opt = torch_optimizer.Yogi(server_params.values(), lr=server_lr, betas=(beta1, beta2))
+            # else:
+            #     raise ValueError("Only set server optimizer as yogi when using FedYogi")
         else:
             raise ValueError()
         sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1, gamma=1)
@@ -126,22 +150,38 @@ def main():
             # log_stats(writer, "eval", stats, 0)
             pass
         
-        for rnd in pbar:
+        for round_idx, rnd in enumerate(pbar):
             client_deltas = []
             stats_acc = {}
             client_ids = torch.randperm(len(clients))[:server_batch]
+            sample_num_list = [len(clients[client_id]) for client_id in client_ids]  # record the number of batches for each client
+            clients_this_round = server_batch  # record the number of clients for this round
+            # scaffold delta
+            if merging_strategy == "scaffold":
+                auxiliary_deltas = []
 
             for i,client_id in enumerate(client_ids):
-                # Download Sparsity
+                # Download Model
                 client_model = deepcopy(server_model)
 
                 # Local Training
                 client_opt = torch.optim.SGD(client_model.parameters(), lr=client_lr, momentum=0.9)
                 client_loader = clients[client_id]
                 client_acc = {}
+                
+                # scaffold correction
+                if merging_strategy == 'scaffold':
+                    local_auxiliary = auxiliary_model_list[client_id]
+                    correction = {key: global_auxiliary[key] - local_auxiliary[key] for key in global_auxiliary.keys()}
+                
                 for epoch in range(client_epochs):
                     for x,y in client_loader:
                         loss, stats = test_batch(client_model, x, y)
+                        # fedprox
+                        if merging_strategy == "fedprox":
+                            mu = args.merging_kwargs['mu']  # TODO: do not use global variable "args"
+                            loss += mu/2*difference_models_norm_2(client_model, server_model)
+                        
                         client_opt.zero_grad()
                         loss.backward()
 
@@ -149,6 +189,12 @@ def main():
                             torch.nn.utils.clip_grad_norm_(client_model.parameters(), l2_clip_norm)
 
                         client_opt.step()
+                        # scaffold correction
+                        if merging_strategy == 'scaffold':
+                            for k, v in client_model.named_parameters():
+                                if k in correction:
+                                    v.data -= client_lr * correction[k]
+
                         for k,v in stats.items():
                             client_acc[k] = client_acc.get(k, 0) + v
                         pbar.set_description(f"eval: {eval_accu} | client {i}, epoch {epoch} | loss {loss:.4f}")
@@ -158,8 +204,22 @@ def main():
                     n: server_params[n].data - cp.data for n,cp 
                                     in client_model.named_parameters() if cp.requires_grad
                 }
-
                 client_deltas.append(neg_client_delta)
+                # update auxiliary model
+                if merging_strategy == 'scaffold':
+                    with torch.no_grad():
+                        new_local_auxiliary = deepcopy(local_auxiliary)
+                        update_steps = client_epochs * len(client_loader)
+                        for k, v in client_model.named_parameters():
+                            if v.requires_grad is False:
+                                continue
+                            else:
+                                new_local_auxiliary[k] = (server_params[k] - v) / (update_steps * client_lr) - correction[k]
+                        # get the auxiliary delta
+                        auxiliary_delta = {key: new_local_auxiliary[key] - local_auxiliary[key] for key in local_auxiliary.keys()}
+                        auxiliary_deltas.append(auxiliary_delta)
+                        # update the auxiliary model
+                        auxiliary_model_list[client_id] = new_local_auxiliary
 
                 # Log last iteration
                 client_acc['norm'] = 0
@@ -167,9 +227,15 @@ def main():
                     stats_acc[k] = stats_acc.get(k, 0) + v
 
             # Optimizer step
-            aggregated_update = merger.aggregate_updates(client_deltas)
-            merger.update_server_model(aggregated_update, server_opt)
-            sched.step()
+            # aggregated_update = merger.aggregate_updates(client_deltas)
+            # merger.update_server_model(aggregated_update, server_opt)
+            # sched.step()
+            server_params, global_auxiliary = global_aggregate(args, server_params, client_deltas, sample_num_list,
+                                                               clients_this_round, round_idx, proxy_dict=proxy_dict,
+                                                               opt_proxy_dict=opt_proxy_dict,
+                                                               auxiliary_info=(global_auxiliary, auxiliary_deltas),
+                                                               lr=server_lr)
+            
 
             # Eval and Logging
             if (rnd+1) % eval_freq == 0:

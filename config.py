@@ -91,7 +91,8 @@ class ConfigManager:
         
         parser.add_argument("--merging-strategy", type=str, 
                             choices=["fedavg", "fedprox", "fedmedian", "trimmedmean", 
-                                    "fednova", "fedper", "fedopt"],
+                                    "fednova", "fedper", "fedavgm", "fedadam", "fedadagrad",
+                                    "scaffold"],
                             help="Merging strategy")
         
         parser.add_argument("--mu", type=float, help="Proximal term weight for FedProx")
@@ -141,4 +142,5 @@ class ConfigManager:
                 config[arg_name.replace("-", "_")] = arg_value
         
         self.current_config = config
+        
         return config

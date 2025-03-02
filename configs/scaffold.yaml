@@ -16,7 +16,7 @@ eval-masked: "true"
 
 # Server settings
 server-opt: "sgd"
-server-lr: 1
+server-lr: 1.0e-3
 server-batch: 10  # numbers of sampled clients per round
 server-rounds: 100
 server-freeze: "false"
@@ -45,6 +45,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedavg"
+merging_strategy: "scaffold"
 merging_kwargs:
   
