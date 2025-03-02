@@ -113,28 +113,29 @@ class ConfigManager:
         args = parser.parse_args()
         
         if args.create_defaults:
-            self.create_default_configs()
+            self.create_default_configs()  # TODO: Implement this method
             exit(0)
             
         if args.list_configs:
-            configs = self.get_all_configs()
+            configs = self.get_all_configs()  # TODO: Implement this method
             print("\nAvailable configurations:")
             for config in configs:
                 print(f"  - {config}")
             print("")
             exit(0)
-            
+        
         if args.config:
             config = self.load_config(args.config)
         else:
             config = self.load_config("fedavg")
 
-        config = {k.replace("-", "_"): v for k, v in config.items()}
+        config = {k.replace("-", "_"): v for k, v in config.items()}  # Replace hyphens with underscores
 
         print("Loaded configuration:")
         for k, v in config.items():
             print(f"  - {k}: {v}")
         
+        # Override or add method-specific configuration with command-line arguments
         for arg_name, arg_value in vars(args).items():
             if arg_value is not None and arg_name not in ["config", "create_defaults", "list_configs"]:
                 config[arg_name.replace("-", "_")] = arg_value

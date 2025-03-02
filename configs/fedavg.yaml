@@ -2,10 +2,10 @@ gpu: "0"
 dir: "runs"
 name: "experiment"
 save: "true"
-dataset: "cifar10"
+dataset: "20newsgroups"
 iid-alpha: 0.1
 clients: 100
-model: "vit_b_16"
+model: "gpt2"
 seed: 0
 
 # Evaluation settings
@@ -17,13 +17,13 @@ eval-masked: "true"
 # Server settings
 server-opt: "adam"
 server-lr: 1.0e-3
-server-batch: 10
+server-batch: 10  # numbers of sampled clients per round
 server-rounds: 100
 server-freeze: "false"
 
 # Client settings
 client-lr: 1.0e-3
-client-batch: 16
+client-batch: 16  # batch size for each client
 client-epochs: 1
 client-freeze: "false"
 
@@ -44,3 +44,5 @@ entity: null
 
 # Merging strategy
 merging_strategy: "fedavg"
+merging_kwargs:
+  

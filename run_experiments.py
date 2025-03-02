@@ -54,6 +54,7 @@ def main():
             overrides["name"] = f"{overrides['name']}_{timestamp}"
     
     elif args.config_list:
+        # Run multiple experiments from config list
         config_list = load_config_list(args.config_list)
         
         for config_item in config_list:
@@ -68,6 +69,7 @@ def main():
                 run_experiment(config_name, item_overrides)
                 
     else:
+        # Run default experiment
         run_experiment("fedavg", overrides)
 
 if __name__ == "__main__":

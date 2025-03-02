@@ -2,10 +2,10 @@ gpu: "0"
 dir: "runs"
 name: "fedprox_experiment"
 save: "true"
-dataset: "cifar10"
+dataset: "20newsgroups"
 iid-alpha: 0.1
 clients: 100
-model: "vit_b_16"
+model: "gpt2"
 seed: 0
 
 # Evaluation settings
