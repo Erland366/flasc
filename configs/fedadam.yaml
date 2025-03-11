@@ -36,6 +36,10 @@ freeze-a: "false"
 lora-rank: 16
 lora-alpha: 16
 
+# Privacy settings
+l2-clip-norm: 0.0
+noise-multiplier: 0.0
+
 # Logging settings
 use_wandb: true
 use_tensorboard: true
@@ -43,10 +47,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedavg"
+merging_strategy: "fedadam"
 merging_kwargs:
-
-# Federated optimizer
-fed_optimizer: "fedadam"
-
   
