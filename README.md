@@ -16,7 +16,7 @@ conda activate flasc
 ```
 
 ```
-python -m pip install tqdm scikit_learn numpy scipy torch torchvision torchaudio tensorflow_cpu peft transformers python-dotenv loguru
+python -m pip install tqdm scikit_learn numpy scipy torch torchvision torchaudio tensorflow_cpu peft transformers python-dotenv loguru torch_optimizer
 ```
 
 
