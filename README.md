@@ -46,10 +46,10 @@ Which it'll use `experiments.yaml` config that uses configs file that is availab
 
 # Update (4/4/2025)
 ## Running Script
-Running the following command after uncommenting all configs in `experiments.yaml` can reproduce similar the results shown in our midterm presentation
-    ```
-    python run_experiments.py --config-list experiments.yaml
-    ```
+Running the following command after uncommenting all configs in `experiments.yaml` can reproduce similar results shown in our midterm presentation
+```
+python run_experiments.py --config-list experiments.yaml
+```
 ## File Structure
 - `train_sparse_lora_vanilla.py`: The main script to run the experiments
 - `configs/` stores the configuration files for the experiments. 
