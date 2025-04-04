@@ -15,8 +15,8 @@ eval-frac: 1.0
 eval-masked: "true"
 
 # Server settings
-server-opt: "sgd"
-server-lr: 1.0e-3
+server-opt: "sgdm"
+server-lr: 1.
 server-batch: 10  # numbers of sampled clients per round
 server-rounds: 100
 server-freeze: "false"
@@ -34,6 +34,9 @@ freeze-a: "false"
 lora-rank: 16
 lora-alpha: 16
 
+# FL settings
+fl_strategy: ""
+
 # Privacy settings
 l2-clip-norm: 0.0
 noise-multiplier: 0.0
@@ -45,6 +48,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedavgm"
+merging_strategy: "average"
 merging_kwargs:
   

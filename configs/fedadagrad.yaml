@@ -34,6 +34,9 @@ freeze-a: "false"
 lora-rank: 16
 lora-alpha: 16
 
+# FL settings
+fl_strategy: ""
+
 # Privacy settings
 l2-clip-norm: 0.0
 noise-multiplier: 0.0
@@ -45,6 +48,6 @@ project_name: "federated_merging"
 entity: null
 
 # Merging strategy
-merging_strategy: "fedadagrad"
+merging_strategy: "average"
 merging_kwargs:
   
