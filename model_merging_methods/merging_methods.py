@@ -263,7 +263,8 @@ class MergingMethod:
 
         return merged_params
 
-    def regmean_merging(self, models_to_merge: list, train_loaders: list, exclude_param_names_regex: list,
+    def regmean_merging(self, models_to_merge: list, average_weights: torch.Tensor,
+                        train_loaders: list, exclude_param_names_regex: list,
                         nums_regmean_examples: torch.Tensor,
                         device: torch.device, reduce_non_diagonal_ratio: float = 1.0):
         """
@@ -316,7 +317,7 @@ class MergingMethod:
 
         def merging_with_regmean_weights(models_to_merge_param_dict: dict,
                                          models_to_merge_regmean_weights_list: list,
-                                         sample_ratios: torch.Tensor,
+                                         average_weights: torch.Tensor,
                                          reduce_non_diagonal_ratio: float = 1.0,
                                          ):
             """
@@ -364,8 +365,8 @@ class MergingMethod:
                         merged_by_regmean = True
                 # use average merging for parameters whose names are not end with ".weight" or not in Linear module
                 if not merged_by_regmean:
-                    sample_ratios = sample_ratios.view(-1, *([1] * param_value_list[0].dim()))
-                    merged_params[param_name] = (torch.stack(param_value_list, dim=0) * sample_ratios).sum(dim=0)
+                    average_weights = average_weights.view(-1, *([1] * param_value_list[0].dim()))
+                    merged_params[param_name] = (torch.stack(param_value_list, dim=0) * average_weights).sum(dim=0)
 
             return merged_params
 
@@ -422,12 +423,10 @@ class MergingMethod:
                 for handle in handles:
                     handle.remove()
             # merging with regmean weights
-            sample_ratios = torch.Tensor([len(train_loader) for train_loader in train_loaders])
-            sample_ratios = sample_ratios / sample_ratios.sum()
             merged_params = merging_with_regmean_weights(models_to_merge_param_dict=models_to_merge_param_dict,
                                                          models_to_merge_regmean_weights_list=models_to_merge_regmean_weights_list,
                                                          reduce_non_diagonal_ratio=reduce_non_diagonal_ratio,
-                                                         sample_ratios=sample_ratios)
+                                                         average_weights=average_weights)
 
         return merged_params
 

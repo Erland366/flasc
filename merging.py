@@ -13,7 +13,9 @@ class BaseMerging:
         self.server_model = server_model
         self.server_params = {n: p for n, p in server_model.named_parameters() if p.requires_grad}
 
-    def aggregate_updates(self, neg_client_deltas: List[Dict[str, torch.Tensor]], **kwargs) -> Dict[str, torch.Tensor]:
+    def aggregate_updates(self, neg_client_deltas: List[Dict[str, torch.Tensor]],
+                          average_weights: torch.Tensor,  # shape: (num_clients,)
+                          **kwargs) -> Dict[str, torch.Tensor]:
         raise NotImplementedError()
 
     def update_server_model(self, aggregated_update: Dict[str, torch.Tensor], server_opt: torch.optim.Optimizer) -> None:
@@ -26,19 +28,18 @@ class BaseMerging:
 
 class TaskArithmetic(BaseMerging):
     def aggregate_updates(self, neg_client_deltas: List[Dict[str, torch.Tensor]],
-                          sample_num_list: torch.Tensor,  # shape: (num_clients,)
+                          average_weights: torch.Tensor,  # shape: (num_clients,)
                           scaling_coefficient: float = 1.,  # set to 1.0 is FedAvg
                           **kwargs
                           ) -> Dict[str, torch.Tensor]:
-        sample_ratio_list = sample_num_list / sample_num_list.sum()
         num_clients = len(neg_client_deltas)
         aggregate = {}
         for n, p in neg_client_deltas[0].items():
-            aggregate[n] = p.clone() * scaling_coefficient * sample_ratio_list[0]
+            aggregate[n] = p.clone() * scaling_coefficient * average_weights[0]
 
         for i in range(1, num_clients):
             for n, p in neg_client_deltas[i].items():
-                aggregate[n] += p * scaling_coefficient * sample_ratio_list[i]
+                aggregate[n] += p * scaling_coefficient * average_weights[i]
         return aggregate
 
 
@@ -142,7 +143,7 @@ class FisherMerging(BaseMerging):
         return merged_params
 
     def aggregate_updates(self, neg_client_deltas: List[Dict[str, torch.Tensor]],
-                          sample_num_list: torch.Tensor,  # shape: (num_clients,)
+                          average_weights: torch.Tensor,  # shape: (num_clients,)
                           client_loaders: List[torch.utils.data.DataLoader],  # shape: (num_clients,)
                           nums_fisher_examples: torch.Tensor,  # shape: (num_clients,)
                           device: torch.device,
@@ -150,7 +151,6 @@ class FisherMerging(BaseMerging):
                           minimal_fisher_weight: float = 1e-6,
                           **kwargs
                           ) -> Dict[str, torch.Tensor]:
-        sample_ratio_list = sample_num_list / sample_num_list.sum()
         models_to_merge_param_dict = defaultdict(list)
         models_to_merge_fisher_weights_list = []
         for client_idx, (client_loader, num_fisher_examples) in enumerate(zip(client_loaders,
@@ -223,7 +223,7 @@ class FisherMerging(BaseMerging):
 
         # merging with fisher weights
         # if fisher_scaling_coefficients is None, then set the fisher weights of different models to contribute equally
-        fisher_scaling_coefficients = sample_ratio_list
+        fisher_scaling_coefficients = average_weights
         # merging with fisher weights
         merged_params = self.merging_with_fisher_weights(models_to_merge_param_dict=models_to_merge_param_dict,
                                                          models_to_merge_fisher_weights_list=models_to_merge_fisher_weights_list,
@@ -240,7 +240,7 @@ class FisherMerging(BaseMerging):
 class TiesMerging(BaseMerging):
     def aggregate_updates(self,
                           neg_client_deltas: List[Dict[str, torch.Tensor]],
-                          sample_num_list: torch.Tensor,
+                          average_weights: torch.Tensor,  # shape: (num_clients,)
                           scaling_coefficient: float = 1.,
                           **kwargs
                           ) -> Dict[str, torch.Tensor]:
@@ -251,7 +251,7 @@ class TiesMerging(BaseMerging):
             client_model = deepcopy(self.server_model)
             for n, p in client_model.named_parameters():
                 if n in neg_client_delta:
-                    p.data -= neg_client_delta[n] * sample_num_list[i] / sample_num_list.sum()
+                    p.data -= neg_client_delta[n]
             models_to_merge.append(client_model)
         from model_merging_methods.merging_methods import MergingMethod
         ties_merging_method = MergingMethod("ties_merging")
@@ -268,7 +268,7 @@ class TiesMerging(BaseMerging):
 class RegmeanMerging(BaseMerging):
     def aggregate_updates(self,
                           neg_client_deltas: List[Dict[str, torch.Tensor]],
-                          sample_num_list,
+                          average_weights: torch.Tensor,  # shape: (num_clients,)
                           nums_regmean_examples: torch.Tensor,
                           client_loaders: List[torch.utils.data.DataLoader],
                           device: torch.device,
@@ -285,6 +285,7 @@ class RegmeanMerging(BaseMerging):
         from model_merging_methods.merging_methods import MergingMethod
         regmean_merging_method = MergingMethod("regmean_merging")
         merged_params = regmean_merging_method.regmean_merging(models_to_merge,
+                                                               average_weights=average_weights,
                                                                train_loaders=client_loaders,
                                                                exclude_param_names_regex=[],
                                                                nums_regmean_examples=nums_regmean_examples,

@@ -150,10 +150,10 @@ def main():
         def eval_loop(model, loader):
             model.eval()
             stats_acc = {}
-            for x,y in loader:
+            for x, y in loader:
                 with torch.no_grad():
                     _, stats = test_batch(model, x, y)
-                for k,v in stats.items():
+                for k, v in stats.items():
                     stats_acc[k] = stats_acc.get(k, 0) + v
             stats_acc['loss'] /= stats_acc['count']
             return stats_acc
@@ -168,7 +168,12 @@ def main():
             stats_acc = {}
             client_ids = torch.randperm(len(clients))[:server_batch]
             client_loaders = [clients[i] for i in client_ids]
-            sample_num_list = torch.Tensor([len(client_loader) for client_loader in client_loaders])  # record the number of batches for each client
+            # set the weights for weighted merging
+            average_weights = torch.Tensor([len(client_loader) for client_loader in client_loaders])
+            if merging_strategy in ['average', 'fisher_merging', 'regmean_merging']:
+                average_weights = average_weights / average_weights.sum()
+            elif merging_strategy in ['ties_merging', "task_arthmetic"]:
+                average_weights.fill_(1.0)  # use 1.0 for all clients, default option for now
             nums_fisher_examples = torch.Tensor([(len(client_loader)-1)*client_loader.batch_size for client_loader in client_loaders])
             nums_regmean_examples = nums_fisher_examples.clone()
             # clients_this_round = server_batch  # record the number of clients for this round
@@ -218,7 +223,7 @@ def main():
 
             # Optimizer step
             aggregated_update = merger.aggregate_updates(neg_client_deltas,
-                                                         sample_num_list,
+                                                         average_weights,
                                                          scaling_coefficient=scaling_coefficient,
                                                          client_loaders=client_loaders,
                                                          test_batch=test_batch,

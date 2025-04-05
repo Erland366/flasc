@@ -183,3 +183,12 @@ debug_dropout.ipynb
 
 # vscode
 .vscode/
+
+# checkpoints
+checkpoints/
+
+# mergekit configs
+mergekit_configs/
+
+# temporary files
+working_playground.ipynb
