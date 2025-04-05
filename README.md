@@ -69,11 +69,13 @@ of our methods directly use the APIs. They serve as a reference for the others.
  4. *Change the non-iid level*: change `iid-alpha` in the config file from 0 to 1. The larger the value, the more non-iid the data is.
 
 ## Need to improve
-1. The `ties_merging` method doesn't have good performance at this point. Might be due to improper implementation of the method, alghoutgh it's based the API.
+1. ~~The `ties_merging` method doesn't have good performance at this point. Might be due to improper implementation of the method, alghoutgh it's based the API.~~
 
-2. `dare_merging` or `mask_merging` is not supported yet.
+2. It seems that these merging algorithms do not have a good performance in the prior FL setting. 
 
-3. (Future work) Improve the code structure and documentation.
+3. `dare_merging` or `mask_merging` is not supported yet.
+
+4. (Future work) Improve the code structure and documentation.
 
 ## TODO List:
 
