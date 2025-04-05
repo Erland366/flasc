@@ -189,6 +189,7 @@ checkpoints/
 
 # mergekit configs
 mergekit_configs/
+mergekit/
 
 # temporary files
 working_playground.ipynb
