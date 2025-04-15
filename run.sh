@@ -17,9 +17,9 @@ for client_opt in "${client_opts[@]}"; do
                 for merging_strategy in "${merging_strategies[@]}"; do
                     for seed in "${seeds[@]}"; do
                         # Set the server learning rate
-                        server_lr=1.0
+                        server_lr=1.0e-3
                         if [[ "$server_opt" == "sgd" || "$server_opt" == "sgdm" ]]; then
-                            server_lr=0.1
+                            server_lr=1.0
                         fi
                         
                         echo "Running: python train_lora.py --config ${config} \
@@ -33,6 +33,7 @@ for client_opt in "${client_opts[@]}"; do
                             --client-opt "${client_opt}" \
                             --early-stopping "${early_stopping}" \
                             --client-epochs "${client_epoch}" \
+                            --server-lr "${server_lr}" \
                             --server-schedule "${server_schedule}" \
                             --server-opt "${server_opt}" \
                             --merging-strategy "${merging_strategy}" \
