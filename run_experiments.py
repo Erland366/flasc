@@ -23,7 +23,7 @@ def load_config_list(file_path):
         return yaml.safe_load(f)
 
 def run_experiment(config_name, overrides=None):
-    cmd = ["python", "train_sparse_lora_vanilla.py", "--config", config_name]
+    cmd = ["python", "train_lora.py", "--config", config_name]
     
     if overrides:
         for key, value in overrides.items():

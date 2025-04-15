@@ -1,0 +1,57 @@
+gpu: "0"
+dir: "runs"
+name: "train"
+save: "true"
+dataset: "20newsgroups"
+iid-alpha: 0.1
+clients: 100
+model: "gpt2"
+seed: 0
+
+# Evaluation settings
+eval-freq: 10
+eval-first: "false"
+eval-frac: 1.0
+eval-masked: "true"
+
+# Server settings
+server-opt: "sgd"  # sgd adam yogi adagrad sgdm
+server-lr: 1.0  # 1.0 for sgd and sgdm; 1.0e-3 for others
+server-batch: 10  # numbers of sampled clients per round
+server-rounds: 100
+server-freeze: "false"
+server-hparams:
+  beta1: 0.9
+  beta2: 0.999
+  tau: 1.0e-8
+server-schedule: "cosine"  # "constant", "cosine"
+
+# Client settings
+client-lr: 1.0e-3
+client-batch: 16  # batch size for each client
+client-epochs: 6
+client-freeze: "false"
+client-opt: "adam"
+early-stopping: 0.95  # early stopping threshold (running accuracy)
+
+# LoRA settings
+freeze-a: "false"
+lora-rank: 16
+lora-alpha: 16
+
+# FL settings
+fl_strategy:   # set to "fedprox" to use FedProx
+
+# Privacy settings
+l2-clip-norm: 0.0
+noise-multiplier: 0.0
+
+# Logging settings
+use_wandb: true
+use_tensorboard: true
+project_name: "federated_merging"
+entity: null
+
+# Merging strategy
+merging_strategy: "fisher_merging"  # average fisher_merging regmean_merging ties_merging task_arithmetic
+merging_kwargs:

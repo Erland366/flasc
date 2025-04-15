@@ -72,6 +72,7 @@ def main():
         server_batch: int,
         server_lr: float,
         server_freeze: bool,
+        client_opt: Literal["sgd", "adam"],
         client_lr: float,
         client_epochs: int,
         client_freeze: bool,
@@ -79,7 +80,8 @@ def main():
         fl_strategy: str,
         l2_clip_norm: float = 0.0,
         merging_strategy: str = "fedavg",
-        merging_kwargs: dict = None
+        merging_kwargs: dict = None,
+        early_stopping: float = None,
     ):
         if args.use_tensorboard:
             writer = tf.summary.create_file_writer(run_dir)
@@ -132,8 +134,14 @@ def main():
                               beta1=beta1, beta2=beta2)
         else:
             raise ValueError()
-        # sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1,
-        #                                         gamma=1)
+        # client opt
+        client_opt_type = client_opt
+        if args.server_schedule == "cosine":
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+                server_opt, T_max=rounds)
+        elif args.server_schedule == "constant":
+            sched = torch.optim.lr_scheduler.StepLR(server_opt, step_size=1,
+                                                    gamma=1)
 
         merging_kwargs = merging_kwargs or {}
         merger = MergingFactory.get_merging_strategy(merging_strategy,
@@ -184,11 +192,19 @@ def main():
                 client_model.to(device)
 
                 # Local Training
-                client_opt = torch.optim.SGD(client_model.parameters(), lr=client_lr, momentum=0.9)
+                if client_opt_type == "sgd":
+                    client_opt = torch.optim.SGD(client_model.parameters(), lr=client_lr, momentum=0.9)
+                elif client_opt_type == "adam":
+                    client_opt = torch.optim.Adam(client_model.parameters(), lr=client_lr)
+                elif client_opt_type == "adagrad":
+                    client_opt = torch.optim.Adagrad(client_model.parameters(), lr=client_lr)
+                elif client_opt_type == "yogi":
+                    client_opt = Yogi(client_model.parameters(), lr=client_lr)
                 client_loader = clients[client_id]
                 client_acc = {}
 
                 for epoch in range(client_epochs):
+                    stats = {}
                     for x, y in client_loader:
                         loss, stats = test_batch(client_model, x, y)
                         # fedprox
@@ -206,7 +222,14 @@ def main():
 
                         for k, v in stats.items():
                             client_acc[k] = client_acc.get(k, 0) + v
+
                         pbar.set_description(f"eval: {eval_accu} | client {i}, epoch {epoch} | loss {loss:.4f}")
+                    # early stopping
+                    # or when using SGD (in this case we only train one epoch)
+                    accuracy = stats['tp'] / stats['count']
+                    stop_flag = early_stopping and accuracy >= early_stopping
+                    if stop_flag:
+                        break
 
                 # This is our delta parameter
                 client_model.to("cpu")  # move to cpu to save memory
@@ -233,7 +256,7 @@ def main():
                                                          normalize_fisher_weight=True,
                                                          minimal_fisher_weight = 1e-6)
             merger.update_server_model(aggregated_update, server_opt)
-            # sched.step()
+            sched.step()
 
             # Eval and Logging
             if (rnd+1) % eval_freq == 0:
@@ -271,7 +294,8 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Add hash4 at the end?
-    args.name += f"_{args.model}_c{args.clients}_b{args.client_batch}_lr{args.client_lr}_e{args.client_epochs}_{args.merging_strategy}_{args.server_opt}"
+    early_stopping_suffix = f"_early{args.early_stopping}" if args.early_stopping else ""
+    args.name += f"_{args.model}_seed{args.seed}_c{args.clients}_{args.server_schedule} lr_r{args.server_rounds}_e{args.client_epochs}{early_stopping_suffix}_{args.merging_strategy}_server {args.server_opt}_client {args.client_opt}"
     args.wandb_name = f"{args.name}"
     # add name with date
     args.run_dir_name = f"{args.dir}/{args.name}_{time.strftime('%Y%m%d-%H%M%S')}"
@@ -290,17 +314,19 @@ def main():
              eval_first=str2bool(args.eval_first),
              eval_masked=str2bool(args.eval_masked),
              server_opt=args.server_opt,
-             server_batch=args.server_batch, 
+             server_batch=args.server_batch,
              server_lr=args.server_lr,
              server_freeze=str2bool(args.server_freeze),
+             client_opt=args.client_opt,
              client_lr=args.client_lr, 
              client_epochs=args.client_epochs,
              client_freeze=str2bool(args.client_freeze),
              l2_clip_norm=args.l2_clip_norm,
              merging_strategy=args.merging_strategy,
              merging_kwargs=args.merging_kwargs,
-             fl_strategy="",
-             device=device)
+             fl_strategy=args.fl_strategy,
+             device=device,
+             early_stopping=args.early_stopping,)
 
     if is_wandb_available():
         import wandb

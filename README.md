@@ -44,29 +44,23 @@ python run_experiments.py --config-list experiments.yaml
 
 Which it'll use `experiments.yaml` config that uses configs file that is available at `configs/`
 
-# Update (4/4/2025)
+# Update (4/15/2025)
 ## Running Script
-Running the following command after uncommenting all configs in `experiments.yaml` can reproduce similar results shown in our midterm presentation
+Running the script `run.sh`for the full FL experiments. Modify the hyperparameters in the script to run different experiments.
 ```
-python run_experiments.py --config-list experiments.yaml
+bash run.sh
 ```
 ## File Structure
-- `train_sparse_lora_vanilla.py`: The main script to run the experiments
-- `configs/` stores the configuration files for the experiments. 
-- `experiments.yaml` stores the configs for experiments when we run the command `python run_experiments.py --config-list experiments.yaml`.
+- `train_lora.py`: The main script to run the experiments
+- `configs/` stores a basic configuration file.
+- `experiments.yaml` stores the configs for experiments if we run the command `python run_experiments.py --config-list experiments.yaml`.
 - `merging.py` includes implementations of the merging algorithms
 - `model_merging_methods/` stores merging methods from the [DARE repo](https://github.com/yule-BUAA/MergeLM/tree/main/model_merging_methods). Some
 of our methods directly use the APIs. They serve as a reference for the others.
-- `playfround.ipynb` is a jupyter notebook that provides a basic setup for finetuning and merging the models (in the FL setting). It can be used to conduct study in simple settings and can help to understand the code in `train_sparse_lora_vanilla.py`.
+- `playground.ipynb` is a jupyter notebook that provides a basic setup for finetuning and merging the models (in the FL setting). It can be used to conduct study in simple settings and can help to understand the code in `train_lora.py`. **The current file has not been cleaned and includes some messy code.**
 
 ## Configuration
- 1. *Change merging strategy*: change `merging_strategy` in the config file. Options are `[average, task_arithmetic, fisher_merging, regmean_merging, ties_merging]`.
-
- 2. *Use FedProx*: set `fl_strategy` to be `fedprox` in the config file.
-
- 3. *Change the server optimizer (i.e., FedOPT)*: change `server-opt` in the config file. Options are `[sgd, sgdm, adagrad, adam, yogi]`. For `sgd` and `sgdm`, learning rate is set to be 1 to follow the vanilla FedAvg.
-
- 4. *Change the non-iid level*: change `iid-alpha` in the config file from 0 to 1. The larger the value, the more non-iid the data is.
+Please check the options in the `run.sh` script. More information can be found in `configs/basic_config.yaml`and `config.py`.
 
 ## Need to improve
 1. ~~The `ties_merging` method doesn't have good performance at this point. Might be due to improper implementation of the method, alghoutgh it's based the API.~~
@@ -77,7 +71,7 @@ of our methods directly use the APIs. They serve as a reference for the others.
 
 4. (Future work) Improve the code structure and documentation.
 
-## TODO List:
+## TODO List (*Outdated*):
 
 ### Main Experiments
 - Preparations

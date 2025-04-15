@@ -6,30 +6,30 @@ from typing import Dict, Any, Optional
 
 class ConfigManager:
     """Configuration manager for federated learning experiments."""
-    
+
     DEFAULT_CONFIG_PATH = "configs"
-    
+
     def __init__(self, config_path: Optional[str] = None):
         """
         Initialize the configuration manager.
-        
+
         Args:
             config_path: Path to the configuration directory.
         """
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
         self.current_config = {}
-        
+
     def load_config(self, name: str) -> Dict[str, Any]:
         file_path = os.path.join(self.config_path, f"{name}.yaml")
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Configuration '{name}' not found at {file_path}")
-            
+
         with open(file_path, "r") as f:
             config = yaml.safe_load(f)
-            
+
         self.current_config = config
         return config
-    
+
     def _get_parser(self) -> argparse.ArgumentParser:
         """
         def parse():
@@ -72,13 +72,13 @@ class ConfigManager:
             return parser.parse_args()
         """
         parser = argparse.ArgumentParser()
-        
+
         parser.add_argument("--config", type=str, help="Configuration name to load")
         parser.add_argument("--create-defaults", action="store_true", 
                             help="Create default configuration files")
         parser.add_argument("--list-configs", action="store_true", 
                             help="List all available configurations")
-        
+
         parser.add_argument("--gpu", type=str, help="GPU device ID")
         parser.add_argument("--name", type=str, help="Experiment name")
         parser.add_argument("--dataset", type=str, help="Dataset name")
@@ -87,36 +87,52 @@ class ConfigManager:
         parser.add_argument("--server-batch", type=int, help="Server batch size")
         parser.add_argument("--client-lr", type=float, help="Client learning rate")
         parser.add_argument("--server-lr", type=float, help="Server learning rate")
-        parser.add_argument("--seed", type=int, help="Random seed")
-        
+
         parser.add_argument("--merging-strategy", type=str, 
-                            choices=["fedavg", "fedprox", "fedmedian", "trimmedmean", 
-                                    "fednova", "fedper", "fedavgm", "fedadam", "fedadagrad",
-                                    "scaffold"],
+                            choices=["average", "task_arthmetic",
+                                     "fisher_merging", "regmean_merging",
+                                     "ties_merging"],
                             help="Merging strategy")
-        
+
         parser.add_argument("--mu", type=float, help="Proximal term weight for FedProx")
         parser.add_argument("--trim-ratio", type=float, 
                             help="Trim ratio for TrimmedMean")
         parser.add_argument("--personalized-layers", type=str, nargs="+", 
                             help="Layer names to be treated as personalized in FedPer")
-        
+
+        # some arguments we might want to tune
+        parser.add_argument("--seed", type=int, help="Random seed")
+        parser.add_argument("--server-opt", type=str,
+                            choices=["sgd", "sgdm", "adagrad", "adam", "yogi"],
+                            help="Server optimizer")
+        parser.add_argument("--client-opt", type=str,
+                            choices=["sgd", "sgdm", "adagrad", "adam", "yogi"],
+                            help="Client optimizer")
+        parser.add_argument("--server-schedule", type=str,
+                            choices=["constant", "cosine"],
+                            help="Server learning rate schedule")
+        parser.add_argument("--client-epochs", type=int, help="Number of client epochs")
+        parser.add_argument("--early-stopping", type=float,
+                            help="Accuracy threshold for early stopping in local training")
+        parser.add_argument("--fl-strategy", type=str,
+                            choices=["fedprox", None], help="Federated learning strategy"
+                            )
         return parser
-    
+
     def process_cli_args(self) -> Dict[str, Any]:
         """
         Process command-line arguments and return configuration.
-        
+
         Returns:
             Configuration dictionary.
         """
         parser = self._get_parser()
         args = parser.parse_args()
-        
+
         if args.create_defaults:
             self.create_default_configs()  # TODO: Implement this method
             exit(0)
-            
+
         if args.list_configs:
             configs = self.get_all_configs()  # TODO: Implement this method
             print("\nAvailable configurations:")
@@ -124,7 +140,7 @@ class ConfigManager:
                 print(f"  - {config}")
             print("")
             exit(0)
-        
+
         if args.config:
             config = self.load_config(args.config)
         else:
@@ -135,12 +151,12 @@ class ConfigManager:
         print("Loaded configuration:")
         for k, v in config.items():
             print(f"  - {k}: {v}")
-        
+
         # Override or add method-specific configuration with command-line arguments
         for arg_name, arg_value in vars(args).items():
             if arg_value is not None and arg_name not in ["config", "create_defaults", "list_configs"]:
                 config[arg_name.replace("-", "_")] = arg_value
-        
+
         self.current_config = config
-        
+
         return config
