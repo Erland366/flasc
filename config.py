@@ -89,7 +89,7 @@ class ConfigManager:
         parser.add_argument("--server-lr", type=float, help="Server learning rate")
 
         parser.add_argument("--merging-strategy", type=str, 
-                            choices=["average", "task_arthmetic",
+                            choices=["average", "task_arithmetic",
                                      "fisher_merging", "regmean_merging",
                                      "ties_merging"],
                             help="Merging strategy")
