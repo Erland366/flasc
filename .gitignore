@@ -193,5 +193,4 @@ mergekit/
 
 # temporary files
 working_playground.ipynb
-run_ex_3.1.sh
-
+run_ex*.sh

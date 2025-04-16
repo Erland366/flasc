@@ -345,7 +345,7 @@ class FedDare(BaseMerging):
 class MergingFactory:
     STRATEGY_PARAMS = {
         "average": [],
-        "task_arthmetic" : [],
+        "task_arithmetic": [],
         "fisher_merging": [],
         "regmean_merging": [],
         "ties_merging": [],
