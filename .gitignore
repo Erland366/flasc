@@ -194,3 +194,7 @@ mergekit/
 # temporary files
 working_playground.ipynb
 run_ex*.sh
+
+# plots
+plots/
+wandb_runs.csv

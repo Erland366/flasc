@@ -4,10 +4,10 @@ config="basic_config"
 server_opts=("yogi")  # sgd adam yogi adagrad sgdm
 server_schedules=("constant")  # constant cosine
 client_opts=("sgd")  # sgd adam yogi adagrad
-client_epochs=(1)  # 1 2 4 6
+client_epochs=(6)  # 1 2 4 6
 early_stopping=2  # any value between 0 and 1; default can be 0.95. Set to 2 (or any number larger than 1) to disable early stopping
-merging_strategies=(average fisher_merging regmean_merging ties_merging task_arithmetic)  # average fisher_merging regmean_merging ties_merging task_arithmetic
-seeds=(0 1 2)
+merging_strategies=(regmean_merging)  # average fisher_merging regmean_merging ties_merging task_arithmetic
+seeds=(0)
 gpu=0  # GPU ID
 
 for client_opt in "${client_opts[@]}"; do
